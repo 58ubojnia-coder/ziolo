@@ -19,52 +19,92 @@
 </head>
 <body>
 
-<header class="site-header">
-  <div class="brand">
-    <svg class="brand-mark" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <circle cx="12" cy="12" r="8" stroke="#C77A2E" stroke-width="1.4"/>
-      <path d="M12 12L12 5M12 12L17 8.5M12 12L18.4 13.8M12 12L15.5 18M12 12L8.5 18M12 12L5.6 13.8M12 12L6.5 8.5" stroke="#8FAE96" stroke-width="1.4"/>
-      <circle cx="12" cy="12" r="1.3" fill="#C77A2E"/>
-    </svg>
-    <h1>Ziolo</h1>
-    <span class="tag">PL</span>
-  </div>
-  <p class="subtitle">Twój dziennik odmian medycznej marihuany — susz, ocena, apteka.</p>
-
-  <div class="search-row">
-    <input type="search" id="searchInput" placeholder="Szukaj po nazwie, producencie…" autocomplete="off">
-    <button class="btn-add" id="addStrainBtn">+ Dodaj</button>
-  </div>
-
-  <div class="filter-bar" id="filterBar">
-    <button class="chip active" data-filter="all">Wszystkie</button>
-    <button class="chip" data-filter="tested">Przetestowane</button>
-    <button class="chip" data-filter="untested">Do wypróbowania</button>
-    <button class="chip" data-filter="top">Top</button>
-    <button class="chip" data-filter="mid">Mid</button>
-    <button class="chip" data-filter="reggie">Reggie</button>
-    <button class="chip" data-filter="indica">Indica</button>
-    <button class="chip" data-filter="sativa">Sativa</button>
-    <button class="chip" data-filter="hybryda">Hybryda</button>
-  </div>
-</header>
-
 <div id="configWarning" class="config-warning hidden">
-  ⚠ Uzupełnij dane Supabase w pliku <strong>config.js</strong>, żeby aplikacja mogła zapisywać dane.
+  ⚠ Uzupełnij dane Supabase w pliku <strong>config.js</strong>, żeby aplikacja mogła działać.
 </div>
 
-<p class="count-line" id="countLine"></p>
+<!-- Auth screen: shown when nobody is signed in -->
+<div id="authScreen" class="auth-screen hidden">
+  <div class="auth-card">
+    <div class="brand">
+      <svg class="brand-mark" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="12" cy="12" r="8" stroke="#C77A2E" stroke-width="1.4"/>
+        <path d="M12 12L12 5M12 12L17 8.5M12 12L18.4 13.8M12 12L15.5 18M12 12L8.5 18M12 12L5.6 13.8M12 12L6.5 8.5" stroke="#8FAE96" stroke-width="1.4"/>
+        <circle cx="12" cy="12" r="1.3" fill="#C77A2E"/>
+      </svg>
+      <h1>Ziolo</h1>
+    </div>
+    <p class="subtitle">Twój prywatny dziennik odmian. Zaloguj się, żeby zobaczyć swoje oceny.</p>
 
-<main class="catalog-grid" id="catalog">
-  <div class="loading-line">Ładowanie katalogu…</div>
-</main>
+    <div class="field-row">
+      <label>Email</label>
+      <input type="email" id="authEmail" autocomplete="email" placeholder="ty@example.com">
+    </div>
+    <div class="field-row">
+      <label>Hasło</label>
+      <input type="password" id="authPassword" autocomplete="current-password" placeholder="min. 6 znaków">
+    </div>
 
-<!-- Detail / rating panel -->
-<div class="overlay hidden" id="overlay">
-  <div class="detail-panel" id="detailPanel"></div>
+    <p id="authError" class="auth-error hidden"></p>
+    <p id="authNotice" class="auth-notice hidden"></p>
+
+    <div class="auth-actions">
+      <button class="btn-save" id="loginBtn">Zaloguj się</button>
+      <button class="btn-ghost" id="signupBtn">Nie mam konta — zarejestruj mnie</button>
+    </div>
+  </div>
 </div>
 
-<div class="toast" id="toast"></div>
+<!-- Main app: shown only once signed in -->
+<div id="appRoot" class="hidden">
+  <header class="site-header">
+    <div class="brand">
+      <svg class="brand-mark" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="12" cy="12" r="8" stroke="#C77A2E" stroke-width="1.4"/>
+        <path d="M12 12L12 5M12 12L17 8.5M12 12L18.4 13.8M12 12L15.5 18M12 12L8.5 18M12 12L5.6 13.8M12 12L6.5 8.5" stroke="#8FAE96" stroke-width="1.4"/>
+        <circle cx="12" cy="12" r="1.3" fill="#C77A2E"/>
+      </svg>
+      <h1>Ziolo</h1>
+      <span class="tag">PL</span>
+    </div>
+    <p class="subtitle">Twój dziennik odmian medycznej marihuany — susz, ocena, apteka.</p>
+
+    <div class="user-row">
+      <span class="mono" id="userEmailLabel"></span>
+      <button class="link-btn" id="logoutBtn">Wyloguj</button>
+    </div>
+
+    <div class="search-row">
+      <input type="search" id="searchInput" placeholder="Szukaj po nazwie, producencie…" autocomplete="off">
+      <button class="btn-add" id="addStrainBtn">+ Dodaj</button>
+    </div>
+
+    <div class="filter-bar" id="filterBar">
+      <button class="chip active" data-filter="all">Wszystkie</button>
+      <button class="chip" data-filter="tested">Przetestowane</button>
+      <button class="chip" data-filter="untested">Do wypróbowania</button>
+      <button class="chip" data-filter="top">Top</button>
+      <button class="chip" data-filter="mid">Mid</button>
+      <button class="chip" data-filter="reggie">Reggie</button>
+      <button class="chip" data-filter="indica">Indica</button>
+      <button class="chip" data-filter="sativa">Sativa</button>
+      <button class="chip" data-filter="hybryda">Hybryda</button>
+    </div>
+  </header>
+
+  <p class="count-line" id="countLine"></p>
+
+  <main class="catalog-grid" id="catalog">
+    <div class="loading-line">Ładowanie katalogu…</div>
+  </main>
+
+  <!-- Detail / rating panel -->
+  <div class="overlay hidden" id="overlay">
+    <div class="detail-panel" id="detailPanel"></div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+</div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="config.js"></script>

@@ -510,7 +510,71 @@ button{
   padding:2.5rem 1rem;
 }
 
-/* Config warning banner */
+/* ---------- Auth screen ---------- */
+.auth-screen{
+  min-height:100vh;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:1.5rem;
+}
+.auth-card{
+  width:100%;
+  max-width:380px;
+  background:var(--bg-elevated);
+  border:1px solid var(--line);
+  border-radius:var(--radius);
+  padding:1.6rem 1.4rem;
+}
+.auth-card .brand{ justify-content:center; margin-bottom:.4rem; }
+.auth-card .subtitle{ text-align:center; margin-bottom:1.4rem; }
+.auth-error{
+  color:#E08A6B;
+  font-family:'IBM Plex Mono',monospace;
+  font-size:.78rem;
+  margin:.3rem 0 0;
+}
+.auth-notice{
+  color:var(--sage);
+  font-family:'IBM Plex Mono',monospace;
+  font-size:.78rem;
+  margin:.3rem 0 0;
+}
+.auth-actions{
+  display:flex;
+  flex-direction:column;
+  gap:.6rem;
+  margin-top:1.1rem;
+}
+.btn-ghost{
+  background:none;
+  border:1px solid var(--line);
+  color:var(--ink-dim);
+  padding:.75rem;
+  border-radius:var(--radius);
+  font-size:.8rem;
+}
+.btn-ghost:hover{ border-color:var(--sage); color:var(--sage); }
+
+.user-row{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  margin:.2rem 0 .9rem;
+  font-size:.72rem;
+  color:var(--ink-faint);
+}
+.link-btn{
+  background:none;
+  border:none;
+  color:var(--amber-bright);
+  font-family:'IBM Plex Mono',monospace;
+  font-size:.72rem;
+  text-decoration:underline;
+  padding:0;
+}
+
+/* Config warning banner (no longer nested under header, sits at page top) */
 .config-warning{
   background:#3a2418;
   border:1px solid var(--amber);
@@ -518,6 +582,7 @@ button{
   font-family:'IBM Plex Mono',monospace;
   font-size:.78rem;
   padding:.8rem 1rem;
-  margin:1rem 1.25rem 0;
-  border-radius:var(--radius);
+  margin:0;
+  border-radius:0;
+  text-align:center;
 }

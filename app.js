@@ -1,15 +1,106 @@
 // ---------- Setup ----------
 const CFG = window.ZIOLO_CONFIG || {};
-const configOk = CFG.SUPABASE_URL && !CFG.SUPABASE_URL.includes("YOUR-PROJECT");
-if (!configOk) document.getElementById("configWarning").classList.remove("hidden");
+const configOk = !!(CFG.SUPABASE_URL && !CFG.SUPABASE_URL.includes("YOUR-PROJECT"));
 
-const supabase = configOk
-  ? window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY)
-  : null;
+const configWarningEl = document.getElementById("configWarning");
+const authScreenEl = document.getElementById("authScreen");
+const appRootEl = document.getElementById("appRoot");
 
-// ---------- State ----------
+let supabase = null;
+
+function fatalConfigError(msg) {
+  configWarningEl.textContent = "⚠ " + msg;
+  configWarningEl.classList.remove("hidden");
+  authScreenEl.classList.add("hidden");
+  appRootEl.classList.add("hidden");
+}
+
+if (!configOk) {
+  fatalConfigError("Uzupełnij dane Supabase w pliku config.js, żeby aplikacja mogła działać.");
+} else if (!window.supabase || typeof window.supabase.createClient !== "function") {
+  // The supabase-js library didn't load / didn't attach to window as expected.
+  fatalConfigError(
+    "Biblioteka Supabase nie wczytała się poprawnie (sprawdź połączenie internetowe albo konsolę przeglądarki — Cmd+Opt+J / F12)."
+  );
+} else {
+  try {
+    supabase = window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY);
+  } catch (e) {
+    console.error("Supabase init failed:", e);
+    fatalConfigError("Nie udało się połączyć z Supabase: " + e.message);
+  }
+}
+
+// ---------- Auth state ----------
+let currentUser = null; // { id, email }
+
+if (supabase) {
+  supabase.auth.onAuthStateChange((_event, session) => {
+    handleAuthChange(session);
+  });
+  supabase.auth.getSession().then(({ data }) => handleAuthChange(data.session));
+}
+
+function handleAuthChange(session) {
+  if (session && session.user) {
+    currentUser = session.user;
+    authScreenEl.classList.add("hidden");
+    appRootEl.classList.remove("hidden");
+    document.getElementById("userEmailLabel").textContent = currentUser.email || "";
+    loadData();
+  } else {
+    currentUser = null;
+    appRootEl.classList.add("hidden");
+    authScreenEl.classList.remove("hidden");
+  }
+}
+
+function showAuthMessage(kind, msg) {
+  const errEl = document.getElementById("authError");
+  const noticeEl = document.getElementById("authNotice");
+  errEl.classList.add("hidden");
+  noticeEl.classList.add("hidden");
+  if (kind === "error") {
+    errEl.textContent = msg;
+    errEl.classList.remove("hidden");
+  } else {
+    noticeEl.textContent = msg;
+    noticeEl.classList.remove("hidden");
+  }
+}
+
+document.getElementById("loginBtn")?.addEventListener("click", async () => {
+  if (!supabase) return;
+  const email = document.getElementById("authEmail").value.trim();
+  const password = document.getElementById("authPassword").value;
+  if (!email || !password) { showAuthMessage("error", "Podaj email i hasło."); return; }
+  const { error } = await supabase.auth.signInWithPassword({ email, password });
+  if (error) showAuthMessage("error", error.message);
+});
+
+document.getElementById("signupBtn")?.addEventListener("click", async () => {
+  if (!supabase) return;
+  const email = document.getElementById("authEmail").value.trim();
+  const password = document.getElementById("authPassword").value;
+  if (!email || !password) { showAuthMessage("error", "Podaj email i hasło."); return; }
+  if (password.length < 6) { showAuthMessage("error", "Hasło musi mieć min. 6 znaków."); return; }
+  const { data, error } = await supabase.auth.signUp({ email, password });
+  if (error) { showAuthMessage("error", error.message); return; }
+  if (data.session) {
+    // email confirmation disabled in Supabase settings -> signed in immediately
+    return;
+  }
+  showAuthMessage("notice", "Konto utworzone. Sprawdź maila, żeby potwierdzić adres, a potem się zaloguj.");
+});
+
+document.getElementById("logoutBtn")?.addEventListener("click", async () => {
+  if (!supabase) return;
+  await supabase.auth.signOut();
+});
+
+// ---------- App state ----------
 let strains = [];          // rows from `strains` table
-let ratingsByStrain = {};  // strain_id -> rating row
+let ratingsByStrain = {};  // strain_id -> this user's rating row
 let activeFilter = "all";
 let searchTerm = "";
 
@@ -21,28 +112,32 @@ const toastEl = document.getElementById("toast");
 
 // ---------- Data loading ----------
 async function loadData() {
-  if (!supabase) {
-    catalogEl.innerHTML = `<div class="loading-line">Skonfiguruj Supabase w config.js, aby zobaczyć katalog.</div>`;
-    return;
-  }
   catalogEl.innerHTML = `<div class="loading-line">Ładowanie katalogu…</div>`;
 
-  const [{ data: strainRows, error: strainErr }, { data: ratingRows, error: ratingErr }] =
-    await Promise.all([
+  try {
+    const [strainRes, ratingRes] = await Promise.all([
       supabase.from("strains").select("*").order("name", { ascending: true }),
       supabase.from("ratings").select("*"),
     ]);
 
-  if (strainErr) {
-    catalogEl.innerHTML = `<div class="loading-line">Błąd ładowania katalogu: ${strainErr.message}</div>`;
-    return;
+    if (strainRes.error) throw strainRes.error;
+    if (ratingRes.error) throw ratingRes.error;
+
+    strains = strainRes.data || [];
+    ratingsByStrain = {};
+    (ratingRes.data || []).forEach((r) => (ratingsByStrain[r.strain_id] = r));
+
+    render();
+  } catch (err) {
+    console.error("loadData failed:", err);
+    catalogEl.innerHTML = `
+      <div class="empty-state">
+        Błąd ładowania katalogu.<br>
+        <span class="mono">${escapeHtml(err.message || String(err))}</span><br><br>
+        Sprawdź: czy uruchomiłeś supabase/schema.sql, czy dane w config.js są poprawne,
+        i konsolę przeglądarki (F12) po więcej szczegółów.
+      </div>`;
   }
-
-  strains = strainRows || [];
-  ratingsByStrain = {};
-  (ratingRows || []).forEach((r) => (ratingsByStrain[r.strain_id] = r));
-
-  render();
 }
 
 // ---------- Rendering ----------
@@ -92,7 +187,6 @@ function render() {
     .map((s, i) => cardTemplate(s, ratingsByStrain[s.id], i))
     .join("");
 
-  // wire up card interactions
   filtered.forEach((s) => {
     const card = document.getElementById(`card-${s.id}`);
     if (!card) return;
@@ -148,13 +242,12 @@ function escapeHtml(str) {
 // ---------- Quick actions ----------
 async function quickToggleTested(strain) {
   const existing = ratingsByStrain[strain.id];
-  const next = { tested: !existing?.tested };
-  await upsertRating(strain.id, next);
+  await upsertRating(strain.id, { tested: !existing?.tested });
   render();
 }
 
 // ---------- Detail panel ----------
-let currentDraft = null; // working copy of the rating being edited
+let currentDraft = null;
 let currentStrain = null;
 
 function openDetail(strain) {
@@ -183,9 +276,9 @@ function infoRow(label, value) {
 }
 
 function detailTemplate(s, draft) {
-  const stars = (field, label, help) => `
+  const stars = (field, label) => `
     <div class="field-row">
-      <label>${label}${help ? ` — ${help}` : ""}</label>
+      <label>${label}</label>
       <div class="stars" data-field="${field}">
         ${[1, 2, 3, 4, 5]
           .map(
@@ -290,7 +383,7 @@ function wireDetailPanel() {
     group.querySelectorAll("button").forEach((btn) => {
       btn.addEventListener("click", () => {
         const val = Number(btn.dataset.value);
-        currentDraft[field] = currentDraft[field] === val ? null : val; // click again to clear
+        currentDraft[field] = currentDraft[field] === val ? null : val;
         group.querySelectorAll("button").forEach((b) => {
           b.classList.toggle("filled", currentDraft[field] >= Number(b.dataset.value));
         });
@@ -323,19 +416,22 @@ function textOrNull(v) {
 
 // ---------- Supabase writes ----------
 async function upsertRating(strainId, patch) {
+  if (!currentUser) { showToast("Musisz być zalogowany."); return; }
+
   const existing = ratingsByStrain[strainId];
-  const payload = { strain_id: strainId, ...existing, ...patch };
+  const payload = { ...existing, ...patch, strain_id: strainId, user_id: currentUser.id };
   delete payload.id;
   delete payload.created_at;
   delete payload.updated_at;
 
   const { data, error } = await supabase
     .from("ratings")
-    .upsert(payload, { onConflict: "strain_id" })
+    .upsert(payload, { onConflict: "strain_id,user_id" })
     .select()
     .single();
 
   if (error) {
+    console.error("upsertRating failed:", error);
     showToast("Błąd zapisu: " + error.message);
     return;
   }
@@ -343,7 +439,7 @@ async function upsertRating(strainId, patch) {
 }
 
 // ---------- Add custom strain ----------
-document.getElementById("addStrainBtn").addEventListener("click", openAddStrainForm);
+document.getElementById("addStrainBtn")?.addEventListener("click", openAddStrainForm);
 
 function openAddStrainForm() {
   detailPanel.innerHTML = `
@@ -393,6 +489,7 @@ function openAddStrainForm() {
       genetics: textOrNull(document.getElementById("newGenetics").value),
       thc_percent: numOrNull(document.getElementById("newThc").value),
       cbd_percent: numOrNull(document.getElementById("newCbd").value),
+      added_by: currentUser?.id ?? null,
     };
     const { data, error } = await supabase.from("strains").insert(row).select().single();
     if (error) { showToast("Błąd: " + error.message); return; }
@@ -413,7 +510,7 @@ function showToast(msg) {
 }
 
 // ---------- Filter bar & search wiring ----------
-document.getElementById("filterBar").addEventListener("click", (e) => {
+document.getElementById("filterBar")?.addEventListener("click", (e) => {
   const btn = e.target.closest(".chip");
   if (!btn) return;
   activeFilter = btn.dataset.filter;
@@ -423,13 +520,10 @@ document.getElementById("filterBar").addEventListener("click", (e) => {
 });
 
 let searchDebounce = null;
-document.getElementById("searchInput").addEventListener("input", (e) => {
+document.getElementById("searchInput")?.addEventListener("input", (e) => {
   clearTimeout(searchDebounce);
   searchDebounce = setTimeout(() => {
     searchTerm = e.target.value;
     render();
   }, 150);
 });
-
-// ---------- Go ----------
-loadData();

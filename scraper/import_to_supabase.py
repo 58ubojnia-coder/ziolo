@@ -7,8 +7,17 @@ Usage:
     pip install requests --break-system-packages
     python3 import_to_supabase.py \
         --url https://YOUR-PROJECT.supabase.co \
-        --key YOUR_ANON_OR_SERVICE_KEY \
+        --key YOUR_SERVICE_ROLE_KEY \
         --file strains.json
+
+IMPORTANT: use the **service_role** key here, not the anon key. Since the
+schema requires row-level security (only signed-in users can insert/read
+strains), the anon key alone can't write rows from a script with no logged-in
+session — the service_role key bypasses RLS, which is exactly what you want
+for this offline bulk-import step. Find it in Supabase under
+Project Settings -> API -> "service_role" (marked secret — don't put this key
+in your app's config.js or any public/client-facing code, only use it here,
+locally, for imports).
 
 This "upserts" on the `slug` column, so re-running it after a fresh scrape
 just updates existing rows and adds new ones — it won't create duplicates.

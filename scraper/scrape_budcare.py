@@ -50,11 +50,39 @@ def get_soup(url):
     return BeautifulSoup(r.text, "html.parser")
 
 
-def collect_strain_urls():
-    """Walk the paginated /odmiany/ archive and collect every strain detail URL."""
+def _extract_strain_links(soup):
+    """Grab every /odmiany/<slug>/ link that looks like a strain detail page,
+    regardless of which heading level or class wraps it (Elementor's markup
+    for this varies)."""
+    found = []
+    for a in soup.select("a[href*='/odmiany/']"):
+        href = a.get("href")
+        if not href:
+            continue
+        href = href.split("?")[0].split("#")[0]
+        norm = href.rstrip("/")
+        # skip the archive root itself and any /page/N/ pagination links
+        if norm == ARCHIVE_URL.rstrip("/"):
+            continue
+        if "/odmiany/page/" in norm:
+            continue
+        found.append(href if href.endswith("/") else href + "/")
+    return found
+
+
+def collect_strain_urls(max_pages=60):
+    """Walk the paginated /odmiany/ archive and collect every strain detail URL.
+
+    Rather than relying on finding a "Next" link (whose exact text/markup can
+    vary and silently breaks the crawl if it doesn't match), we just keep
+    requesting page/2/, page/3/, ... until a page 404s or comes back with no
+    strain links on it. That's the same stopping condition either way, but it
+    doesn't depend on guessing the pagination widget's text.
+    """
     urls = []
+    seen_this_run = set()
     page = 1
-    while True:
+    while page <= max_pages:
         page_url = ARCHIVE_URL if page == 1 else urljoin(ARCHIVE_URL, f"page/{page}/")
         print(f"[list] fetching page {page}: {page_url}")
         try:
@@ -63,38 +91,27 @@ def collect_strain_urls():
             print(f"  stopped (HTTP error: {e})")
             break
 
-        found_this_page = []
-        for a in soup.select("h2 a[href*='/odmiany/']"):
-            href = a.get("href")
-            if href and href.rstrip("/") != ARCHIVE_URL.rstrip("/"):
-                found_this_page.append(href)
+        found_this_page = _extract_strain_links(soup)
+        found_this_page = list(dict.fromkeys(found_this_page))
 
         if not found_this_page:
-            print("  no more strains found, stopping")
+            print("  no strain links found on this page, stopping")
             break
 
-        urls.extend(found_this_page)
-
-        has_next = soup.select_one("a[href*='/odmiany/page/']") is not None
-        # crude check: does a "next" style link to a higher page number exist
-        next_link = None
-        for a in soup.find_all("a"):
-            if a.get_text(strip=True).lower() in ("next →", "next", "»", "dalej"):
-                next_link = a.get("href")
-        if not next_link:
+        new_ones = [u for u in found_this_page if u not in seen_this_run]
+        if not new_ones:
+            print("  page repeats an earlier page, stopping")
             break
 
+        for u in new_ones:
+            seen_this_run.add(u)
+            urls.append(u)
+
+        print(f"  +{len(new_ones)} strains (running total: {len(urls)})")
         page += 1
         time.sleep(DELAY)
 
-    # de-dupe, keep order
-    seen = set()
-    ordered = []
-    for u in urls:
-        if u not in seen:
-            seen.add(u)
-            ordered.append(u)
-    return ordered
+    return urls
 
 
 def _text_after_label(full_text, label, stop_chars=200):
