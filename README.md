@@ -131,6 +131,26 @@ scraper intentionally uses the archive instead.
 
 ## Notes & honest caveats
 
+- **Result score (1.0–5.0).** Computed automatically from your star ratings —
+  not something you set directly. Weighted according to your priorities:
+  Doznania 24, Body high 18, Moc 16, Wygląd 12, Head high 12, Kreatywność 6,
+  Smak 8, Zapach 4 (out of 100) — roughly a 60/40 split favoring "effects"
+  over "product quality", per your quiz answers. A maxed-out allergic
+  reaction (3/3) subtracts up to 2.0 points. All of this lives in the
+  `RESULT_WEIGHTS` / `ALLERGIC_PENALTY` constants near the top of `app.js` —
+  change the numbers any time you want to retune it, no database changes
+  needed, it's computed live in the browser.
+- **"Dodaj do ekranu głównego" button** only appears on iOS Safari (there's no
+  way for a website to trigger the install prompt itself — iOS requires the
+  person to do it manually via the Share sheet), and opens a short set of
+  instructions instead of doing it automatically.
+- **Filters vs. quick chips.** The top row (Wszystkie/Przetestowane/Top/Mid/
+  Reggie) stays one-tap. Everything else (THC/CBD range, harvest/packaging
+  country, genetics, terpenes, minimum Result) lives behind the "⚙ Filtry"
+  button so the header doesn't get overwhelming — both apply together.
+- **Sorting** is client-side (name/THC/CBD/Result, asc/desc) since the
+  catalog is small enough that there's no real benefit to sorting in the
+  database instead.
 - **Allergic reaction rating.** Each strain now has a 1–3 "reakcja
   alergiczna" rating (1 = none, 3 = strong) alongside taste/smell/look/power/
   experience. Rating it above 1 shows a small red warning tag on that strain's

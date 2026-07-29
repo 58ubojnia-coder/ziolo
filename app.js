@@ -130,12 +130,66 @@ let strains = [];          // rows from `strains` table
 let ratingsByStrain = {};  // strain_id -> this user's rating row
 let activeFilter = "all";
 let searchTerm = "";
+let sortBy = "name";       // name | thc | cbd | result
+let sortDir = "asc";       // asc | desc
+let filters = {
+  thcMin: null, thcMax: null,
+  cbdMin: null, cbdMax: null,
+  harvestOrigin: "",
+  packagingOrigin: "",
+  genetics: "",
+  terpenes: [],            // OR match
+  minResult: null,
+};
 
 const catalogEl = document.getElementById("catalog");
 const countLine = document.getElementById("countLine");
 const overlay = document.getElementById("overlay");
 const detailPanel = document.getElementById("detailPanel");
 const toastEl = document.getElementById("toast");
+
+// ---------- Result score ----------
+// Weighted composite of the star ratings, mapped to a 1.0-5.0 scale.
+// Weights derived from your priority quiz: Group 1 "Jakość produktu"
+// (Power > Look > Taste > Smell) at ~40% overall, Group 2 "Efekty"
+// (Experience > Body high > Head high > Creativity) at ~60% overall.
+// Tune any of these any time — pure client-side math, no DB changes needed.
+const RESULT_WEIGHTS = {
+  rating_experience: 24,
+  rating_body_high: 18,
+  rating_power: 16,
+  rating_look: 12,
+  rating_head_high: 12,
+  rating_creativity: 6,
+  rating_taste: 8,
+  rating_smell: 4,
+};
+const RESULT_MAX = { rating_taste: 5, rating_smell: 5, rating_look: 5, rating_power: 5, rating_experience: 5, rating_body_high: 3, rating_head_high: 3, rating_creativity: 3 };
+// A maxed-out allergic reaction (3/3) subtracts up to this many points from
+// the final Result (you asked for a strong/noticeable penalty).
+const ALLERGIC_PENALTY = 2.0;
+
+function computeResult(rating) {
+  if (!rating) return null;
+  let weightedSum = 0;
+  let weightTotal = 0;
+  for (const field in RESULT_WEIGHTS) {
+    const v = rating[field];
+    if (v == null) continue;
+    const max = RESULT_MAX[field];
+    const normalized = (v - 1) / (max - 1); // 0..1
+    weightedSum += normalized * RESULT_WEIGHTS[field];
+    weightTotal += RESULT_WEIGHTS[field];
+  }
+  if (weightTotal === 0) return null; // nothing rated yet
+  let result = 1 + (weightedSum / weightTotal) * 4; // 1..5
+  if (ALLERGIC_PENALTY > 0 && rating.rating_allergic != null) {
+    const allergicNorm = (rating.rating_allergic - 1) / 2; // 0..1
+    result -= allergicNorm * ALLERGIC_PENALTY;
+  }
+  result = Math.max(1, Math.min(5, result));
+  return Math.round(result * 10) / 10; // 1 decimal place
+}
 
 // ---------- Data loading ----------
 async function loadData() {
@@ -169,27 +223,37 @@ async function loadData() {
 
 // ---------- Rendering ----------
 function matchesFilter(strain, rating) {
-  const genetics = (strain.genetics || "").toLowerCase();
   switch (activeFilter) {
-    case "all":
-      return true;
     case "tested":
-      return !!rating?.tested;
+      if (!rating?.tested) return false;
+      break;
     case "untested":
-      return !rating?.tested;
+      if (rating?.tested) return false;
+      break;
     case "top":
     case "mid":
     case "reggie":
-      return rating?.tier === activeFilter;
-    case "indica":
-      return genetics.includes("indica");
-    case "sativa":
-      return genetics.includes("sativa");
-    case "hybryda":
-      return genetics.includes("hybryda");
-    default:
-      return true;
+      if (rating?.tier !== activeFilter) return false;
+      break;
   }
+
+  if (filters.thcMin != null && !(strain.thc_percent >= filters.thcMin)) return false;
+  if (filters.thcMax != null && !(strain.thc_percent <= filters.thcMax)) return false;
+  if (filters.cbdMin != null && !(strain.cbd_percent >= filters.cbdMin)) return false;
+  if (filters.cbdMax != null && !(strain.cbd_percent <= filters.cbdMax)) return false;
+  if (filters.harvestOrigin && strain.country_growth !== filters.harvestOrigin) return false;
+  if (filters.packagingOrigin && strain.country_packaging !== filters.packagingOrigin) return false;
+  if (filters.genetics && strain.genetics !== filters.genetics) return false;
+  if (filters.terpenes.length) {
+    const strainTerpenes = strain.dominant_terpenes || [];
+    if (!filters.terpenes.some((t) => strainTerpenes.includes(t))) return false;
+  }
+  if (filters.minResult != null) {
+    const result = computeResult(rating);
+    if (result == null || result < filters.minResult) return false;
+  }
+
+  return true;
 }
 
 function matchesSearch(strain) {
@@ -199,9 +263,11 @@ function matchesSearch(strain) {
 }
 
 function render() {
-  const filtered = strains.filter(
+  let filtered = strains.filter(
     (s) => matchesFilter(s, ratingsByStrain[s.id]) && matchesSearch(s)
   );
+
+  filtered = sortStrains(filtered);
 
   countLine.textContent = `${filtered.length} / ${strains.length} odmian w katalogu`;
 
@@ -225,16 +291,42 @@ function render() {
   });
 }
 
+function sortStrains(list) {
+  const dir = sortDir === "asc" ? 1 : -1;
+  const withKey = list.map((s) => {
+    let key;
+    if (sortBy === "thc") key = s.thc_percent;
+    else if (sortBy === "cbd") key = s.cbd_percent;
+    else if (sortBy === "result") key = computeResult(ratingsByStrain[s.id]);
+    else key = (s.name || "").toLowerCase();
+    return { s, key };
+  });
+  withKey.sort((a, b) => {
+    // nulls always sort last regardless of direction
+    if (a.key == null && b.key == null) return 0;
+    if (a.key == null) return 1;
+    if (b.key == null) return -1;
+    if (a.key < b.key) return -1 * dir;
+    if (a.key > b.key) return 1 * dir;
+    return 0;
+  });
+  return withKey.map((x) => x.s);
+}
+
 function cardTemplate(s, rating, i) {
   const tested = !!rating?.tested;
   const tier = rating?.tier;
+  const result = computeResult(rating);
   const idx = String(i + 1).padStart(3, "0");
   return `
     <article class="card" id="card-${s.id}">
       <div class="card-open" role="button" tabindex="0">
         <div class="card-top">
           <span class="card-index mono">No. ${idx}</span>
-          ${tier ? `<span class="stamp ${tier}">${tierLabel(tier)}</span>` : ""}
+          <span class="card-top-right">
+            ${result != null ? `<span class="result-badge">${result.toFixed(1)}</span>` : ""}
+            ${tier ? `<span class="stamp ${tier}">${tierLabel(tier)}</span>` : ""}
+          </span>
         </div>
         <h3 class="card-name">${escapeHtml(s.name || "Bez nazwy")}</h3>
         <p class="card-manufacturer">${escapeHtml(s.manufacturer || "Nieznany producent")}</p>
@@ -303,6 +395,12 @@ function infoRow(label, value) {
   return `<dt>${label}</dt><dd>${escapeHtml(value)}</dd>`;
 }
 
+function formatResultPreview(result) {
+  return result != null
+    ? `${result.toFixed(1)} <span class="unit">/ 5.0</span>`
+    : `<span class="unit">Wynik pojawi się po ocenieniu kategorii poniżej</span>`;
+}
+
 function detailTemplate(s, draft) {
   const stars = (field, label, max = 5, extraClass = "") => `
     <div class="field-row">
@@ -344,6 +442,10 @@ function detailTemplate(s, draft) {
 
     <div class="section-label">Twój dziennik</div>
 
+    <div class="result-preview" id="resultPreview">
+      ${formatResultPreview(computeResult(draft))}
+    </div>
+
     <div class="tested-row">
       <span>Przetestowane</span>
       <div class="switch ${draft.tested ? "on" : ""}" id="testedSwitch"><span class="knob"></span></div>
@@ -377,6 +479,9 @@ function detailTemplate(s, draft) {
     ${stars("rating_look", "Wygląd")}
     ${stars("rating_power", "Moc")}
     ${stars("rating_experience", "Doznania")}
+    ${stars("rating_body_high", "Body high", 3)}
+    ${stars("rating_head_high", "Head high", 3)}
+    ${stars("rating_creativity", "Kreatywność", 3)}
     ${stars("rating_allergic", "Reakcja alergiczna (1 = brak, 3 = silna)", 3, "alert")}
 
     <div class="field-row">
@@ -416,6 +521,8 @@ function wireDetailPanel() {
         group.querySelectorAll("button").forEach((b) => {
           b.classList.toggle("filled", currentDraft[field] >= Number(b.dataset.value));
         });
+        const preview = document.getElementById("resultPreview");
+        if (preview) preview.innerHTML = formatResultPreview(computeResult(currentDraft));
       });
     });
   });
@@ -538,21 +645,217 @@ function showToast(msg) {
   toastTimer = setTimeout(() => toastEl.classList.remove("show"), 2200);
 }
 
-// ---------- Filter bar & search wiring ----------
+// ---------- Advanced filter panel ----------
+const filterOverlayEl = document.getElementById("filterOverlay");
+const filterPanelEl = document.getElementById("filterPanel");
+
+function getDistinct(field) {
+  const vals = strains.map((s) => s[field]).filter((v) => v != null && v !== "");
+  return [...new Set(vals)].sort((a, b) => String(a).localeCompare(String(b), "pl"));
+}
+
+function getDistinctTerpenes() {
+  const all = strains.flatMap((s) => s.dominant_terpenes || []);
+  return [...new Set(all)].sort((a, b) => String(a).localeCompare(String(b), "pl"));
+}
+
+document.getElementById("openFiltersBtn")?.addEventListener("click", openFiltersPanel);
+
+function openFiltersPanel() {
+  const harvestOptions = getDistinct("country_growth");
+  const packagingOptions = getDistinct("country_packaging");
+  const geneticsOptions = getDistinct("genetics");
+  const terpeneOptions = getDistinctTerpenes();
+
+  filterPanelEl.innerHTML = `
+    <button class="panel-close" id="closeFiltersBtn">← Wróć do katalogu</button>
+    <div class="panel-header">
+      <h2>Filtry</h2>
+    </div>
+
+    <div class="filter-section">
+      <label class="section-label" style="margin-top:0">THC %</label>
+      <div class="range-row">
+        <input type="number" step="0.1" id="thcMinInput" placeholder="min" value="${filters.thcMin ?? ""}">
+        <span>—</span>
+        <input type="number" step="0.1" id="thcMaxInput" placeholder="max" value="${filters.thcMax ?? ""}">
+      </div>
+    </div>
+
+    <div class="filter-section">
+      <label class="section-label">CBD %</label>
+      <div class="range-row">
+        <input type="number" step="0.1" id="cbdMinInput" placeholder="min" value="${filters.cbdMin ?? ""}">
+        <span>—</span>
+        <input type="number" step="0.1" id="cbdMaxInput" placeholder="max" value="${filters.cbdMax ?? ""}">
+      </div>
+    </div>
+
+    <div class="filter-section">
+      <label class="section-label">Kraj uprawy</label>
+      <select class="select-field" id="harvestSelect">
+        <option value="">Wszystkie</option>
+        ${harvestOptions.map((v) => `<option value="${escapeHtml(v)}" ${filters.harvestOrigin === v ? "selected" : ""}>${escapeHtml(v)}</option>`).join("")}
+      </select>
+    </div>
+
+    <div class="filter-section">
+      <label class="section-label">Kraj pakowania</label>
+      <select class="select-field" id="packagingSelect">
+        <option value="">Wszystkie</option>
+        ${packagingOptions.map((v) => `<option value="${escapeHtml(v)}" ${filters.packagingOrigin === v ? "selected" : ""}>${escapeHtml(v)}</option>`).join("")}
+      </select>
+    </div>
+
+    <div class="filter-section">
+      <label class="section-label">Genetyka</label>
+      <select class="select-field" id="geneticsSelect">
+        <option value="">Wszystkie</option>
+        ${geneticsOptions.map((v) => `<option value="${escapeHtml(v)}" ${filters.genetics === v ? "selected" : ""}>${escapeHtml(v)}</option>`).join("")}
+      </select>
+    </div>
+
+    <div class="filter-section">
+      <label class="section-label">Terpeny (dowolny z zaznaczonych)</label>
+      <div class="checkbox-list" id="terpeneList">
+        ${terpeneOptions
+          .map(
+            (t) => `
+          <label class="checkbox-chip ${filters.terpenes.includes(t) ? "checked" : ""}">
+            <input type="checkbox" value="${escapeHtml(t)}" ${filters.terpenes.includes(t) ? "checked" : ""}>
+            ${escapeHtml(t)}
+          </label>`
+          )
+          .join("") || `<span class="mono" style="color:var(--ink-faint); font-size:.75rem;">Brak danych o terpenach w katalogu</span>`}
+      </div>
+    </div>
+
+    <div class="filter-section">
+      <label class="section-label">Minimalny wynik ogólny</label>
+      <select class="select-field" id="minResultSelect">
+        <option value="">Dowolny</option>
+        ${[1, 2, 3, 4, 5].map((n) => `<option value="${n}" ${filters.minResult === n ? "selected" : ""}>≥ ${n}.0</option>`).join("")}
+      </select>
+    </div>
+
+    <div class="filter-actions">
+      <button class="btn-ghost" id="clearFiltersBtn">Wyczyść filtry</button>
+      <button class="btn-save" id="applyFiltersBtn">Zastosuj</button>
+    </div>
+  `;
+
+  filterOverlayEl.classList.remove("hidden");
+
+  document.getElementById("closeFiltersBtn").addEventListener("click", closeFilters);
+
+  document.querySelectorAll("#terpeneList .checkbox-chip").forEach((label) => {
+    label.addEventListener("click", (e) => {
+      // let the native checkbox toggle happen, then sync the visual state
+      setTimeout(() => {
+        const input = label.querySelector("input");
+        label.classList.toggle("checked", input.checked);
+      }, 0);
+    });
+  });
+
+  document.getElementById("applyFiltersBtn").addEventListener("click", () => {
+    filters.thcMin = numOrNull(document.getElementById("thcMinInput").value);
+    filters.thcMax = numOrNull(document.getElementById("thcMaxInput").value);
+    filters.cbdMin = numOrNull(document.getElementById("cbdMinInput").value);
+    filters.cbdMax = numOrNull(document.getElementById("cbdMaxInput").value);
+    filters.harvestOrigin = document.getElementById("harvestSelect").value;
+    filters.packagingOrigin = document.getElementById("packagingSelect").value;
+    filters.genetics = document.getElementById("geneticsSelect").value;
+    filters.minResult = numOrNull(document.getElementById("minResultSelect").value);
+    filters.terpenes = Array.from(
+      document.querySelectorAll("#terpeneList input:checked")
+    ).map((i) => i.value);
+
+    closeFilters();
+    render();
+    showToast("Filtry zastosowane ✓");
+  });
+
+  document.getElementById("clearFiltersBtn").addEventListener("click", () => {
+    filters = { thcMin: null, thcMax: null, cbdMin: null, cbdMax: null, harvestOrigin: "", packagingOrigin: "", genetics: "", terpenes: [], minResult: null };
+    closeFilters();
+    render();
+    showToast("Filtry wyczyszczone");
+  });
+}
+
+function closeFilters() {
+  filterOverlayEl.classList.add("hidden");
+}
+
+filterOverlayEl?.addEventListener("click", (e) => {
+  if (e.target === filterOverlayEl) closeFilters();
+});
+
+// ---------- Filter bar, search & sort wiring ----------
 document.getElementById("filterBar")?.addEventListener("click", (e) => {
-  const btn = e.target.closest(".chip");
+  const btn = e.target.closest(".chip:not(.chip-outline)");
   if (!btn) return;
   activeFilter = btn.dataset.filter;
-  document.querySelectorAll(".chip").forEach((c) => c.classList.remove("active"));
+  document.querySelectorAll(".chip:not(.chip-outline)").forEach((c) => c.classList.remove("active"));
   btn.classList.add("active");
   render();
 });
 
+const searchInputEl = document.getElementById("searchInput");
+const clearSearchBtn = document.getElementById("clearSearchBtn");
+
 let searchDebounce = null;
-document.getElementById("searchInput")?.addEventListener("input", (e) => {
+searchInputEl?.addEventListener("input", (e) => {
+  clearSearchBtn.classList.toggle("hidden", !e.target.value);
   clearTimeout(searchDebounce);
   searchDebounce = setTimeout(() => {
     searchTerm = e.target.value;
     render();
   }, 150);
+});
+
+clearSearchBtn?.addEventListener("click", () => {
+  searchInputEl.value = "";
+  searchTerm = "";
+  clearSearchBtn.classList.add("hidden");
+  searchInputEl.focus();
+  render();
+});
+
+document.getElementById("sortBySelect")?.addEventListener("change", (e) => {
+  sortBy = e.target.value;
+  render();
+});
+
+document.getElementById("sortDirBtn")?.addEventListener("click", () => {
+  sortDir = sortDir === "asc" ? "desc" : "asc";
+  const btn = document.getElementById("sortDirBtn");
+  btn.textContent = sortDir === "asc" ? "↑ Rosnąco" : "↓ Malejąco";
+  render();
+});
+
+// ---------- "Add to Home Screen" prompt (iOS) ----------
+const installOverlay = document.getElementById("installOverlay");
+const installBtn = document.getElementById("installBtn");
+
+function isIosSafari() {
+  const ua = window.navigator.userAgent;
+  const isIos = /iPad|iPhone|iPod/.test(ua) && !window.MSStream;
+  const isStandalone =
+    window.navigator.standalone === true ||
+    window.matchMedia("(display-mode: standalone)").matches;
+  return isIos && !isStandalone;
+}
+
+if (isIosSafari()) {
+  installBtn?.classList.remove("hidden");
+}
+
+installBtn?.addEventListener("click", () => installOverlay.classList.remove("hidden"));
+document.getElementById("closeInstallBtn")?.addEventListener("click", () =>
+  installOverlay.classList.add("hidden")
+);
+installOverlay?.addEventListener("click", (e) => {
+  if (e.target === installOverlay) installOverlay.classList.add("hidden");
 });

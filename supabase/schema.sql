@@ -51,6 +51,10 @@ create table if not exists ratings (
   rating_look smallint check (rating_look between 1 and 5),
   rating_power smallint check (rating_power between 1 and 5),
   rating_experience smallint check (rating_experience between 1 and 5),
+  rating_allergic smallint check (rating_allergic between 1 and 3),
+  rating_body_high smallint check (rating_body_high between 1 and 3),
+  rating_head_high smallint check (rating_head_high between 1 and 3),
+  rating_creativity smallint check (rating_creativity between 1 and 3),
   notes text,
   tested_at date,
   created_at timestamptz default now(),
@@ -84,21 +88,39 @@ alter table ratings enable row level security;
 -- others' entries. If you'd rather each friend keep a totally separate
 -- catalog instead of a shared one, add a `user_id` column here too and
 -- restrict select/insert the same way as `ratings` below.
+drop policy if exists "signed-in users can read strains" on strains;
 create policy "signed-in users can read strains" on strains
   for select using (auth.role() = 'authenticated');
 
+drop policy if exists "signed-in users can add strains" on strains;
 create policy "signed-in users can add strains" on strains
   for insert with check (auth.role() = 'authenticated');
 
 -- Ratings: strictly private per person.
+drop policy if exists "users read own ratings" on ratings;
 create policy "users read own ratings" on ratings
   for select using (auth.uid() = user_id);
 
+drop policy if exists "users insert own ratings" on ratings;
 create policy "users insert own ratings" on ratings
   for insert with check (auth.uid() = user_id);
 
+drop policy if exists "users update own ratings" on ratings;
 create policy "users update own ratings" on ratings
   for update using (auth.uid() = user_id);
 
+drop policy if exists "users delete own ratings" on ratings;
 create policy "users delete own ratings" on ratings
   for delete using (auth.uid() = user_id);
+
+-- ---------------------------------------------------------------------------
+-- Migration for existing deployments: safe to re-run this whole file even on
+-- a database that already has these tables — everything above uses
+-- `if not exists` / `or replace` / `drop ... if exists` so it won't touch
+-- your friends' existing accounts or ratings. This line specifically adds the
+-- "reakcja alergiczna" (allergic reaction, 1-3) field if you deployed before
+-- it existed:
+alter table ratings add column if not exists rating_allergic smallint check (rating_allergic between 1 and 3);
+alter table ratings add column if not exists rating_body_high smallint check (rating_body_high between 1 and 3);
+alter table ratings add column if not exists rating_head_high smallint check (rating_head_high between 1 and 3);
+alter table ratings add column if not exists rating_creativity smallint check (rating_creativity between 1 and 3);

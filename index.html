@@ -72,11 +72,17 @@
 
     <div class="user-row">
       <span class="mono" id="userEmailLabel"></span>
-      <button class="link-btn" id="logoutBtn">Wyloguj</button>
+      <div class="user-row-actions">
+        <button class="link-btn hidden" id="installBtn">📲 Dodaj do ekranu głównego</button>
+        <button class="link-btn" id="logoutBtn">Wyloguj</button>
+      </div>
     </div>
 
     <div class="search-row">
-      <input type="search" id="searchInput" placeholder="Szukaj po nazwie, producencie…" autocomplete="off">
+      <div class="search-wrap">
+        <input type="search" id="searchInput" placeholder="Szukaj po nazwie, producencie…" autocomplete="off">
+        <button class="clear-btn hidden" id="clearSearchBtn" aria-label="Wyczyść wyszukiwanie">×</button>
+      </div>
       <button class="btn-add" id="addStrainBtn">+ Dodaj</button>
     </div>
 
@@ -87,9 +93,18 @@
       <button class="chip" data-filter="top">Top</button>
       <button class="chip" data-filter="mid">Mid</button>
       <button class="chip" data-filter="reggie">Reggie</button>
-      <button class="chip" data-filter="indica">Indica</button>
-      <button class="chip" data-filter="sativa">Sativa</button>
-      <button class="chip" data-filter="hybryda">Hybryda</button>
+      <button class="chip chip-outline" id="openFiltersBtn">⚙ Filtry</button>
+    </div>
+
+    <div class="sort-row">
+      <label class="mono">Sortuj:</label>
+      <select id="sortBySelect" class="mono">
+        <option value="name">Nazwa</option>
+        <option value="thc">THC</option>
+        <option value="cbd">CBD</option>
+        <option value="result">Wynik</option>
+      </select>
+      <button class="sort-dir-btn mono" id="sortDirBtn" title="Kierunek sortowania">↑ Rosnąco</button>
     </div>
   </header>
 
@@ -102,6 +117,28 @@
   <!-- Detail / rating panel -->
   <div class="overlay hidden" id="overlay">
     <div class="detail-panel" id="detailPanel"></div>
+  </div>
+
+  <!-- Filters panel -->
+  <div class="overlay hidden" id="filterOverlay">
+    <div class="detail-panel" id="filterPanel"></div>
+  </div>
+
+  <!-- "Add to Home Screen" instructions -->
+  <div class="overlay hidden" id="installOverlay">
+    <div class="detail-panel install-panel">
+      <button class="panel-close" id="closeInstallBtn">← Zamknij</button>
+      <div class="panel-header">
+        <h2>Dodaj Ziolo do ekranu głównego</h2>
+      </div>
+      <ol class="install-steps">
+        <li>Otwórz tę stronę w <strong>Safari</strong> (nie w innej przeglądarce).</li>
+        <li>Stuknij ikonę <strong>Udostępnij</strong> (kwadrat ze strzałką w górę) na dolnym pasku.</li>
+        <li>Przewiń listę i wybierz <strong>„Dodaj do ekranu początkowego”</strong>.</li>
+        <li>Zatwierdź nazwę i stuknij <strong>„Dodaj”</strong>.</li>
+      </ol>
+      <p class="description">Aplikacja pojawi się jako ikona na ekranie głównym i będzie otwierać się na pełnym ekranie, bez paska przeglądarki — dokładnie jak natywna aplikacja.</p>
+    </div>
   </div>
 
   <div class="toast" id="toast"></div>
