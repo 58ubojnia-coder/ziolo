@@ -1,10 +1,37 @@
-// ---------- Setup ----------
-const CFG = window.ZIOLO_CONFIG || {};
-const configOk = !!(CFG.SUPABASE_URL && !CFG.SUPABASE_URL.includes("YOUR-PROJECT"));
-
+// ---------- Element refs (grabbed first so the safety net below can use them) ----------
 const configWarningEl = document.getElementById("configWarning");
 const authScreenEl = document.getElementById("authScreen");
 const appRootEl = document.getElementById("appRoot");
+
+// ---------- Global safety net ----------
+// If ANYTHING throws or a promise rejects unhandled anywhere in this app,
+// show it on screen instead of leaving a blank black page with no clue why.
+function showFatalError(detail) {
+  const msg = detail && detail.message ? detail.message : String(detail);
+  console.error("Fatal error:", detail);
+  configWarningEl.textContent =
+    "⚠ Coś poszło nie tak: " + msg + " — otwórz konsolę przeglądarki (F12) po więcej szczegółów.";
+  configWarningEl.classList.remove("hidden");
+}
+window.addEventListener("error", (e) => showFatalError(e.error || e.message));
+window.addEventListener("unhandledrejection", (e) => showFatalError(e.reason));
+
+// Safety timeout: if neither screen becomes visible within a few seconds
+// (e.g. a network call to Supabase just hangs), say so instead of staying blank.
+setTimeout(() => {
+  const authVisible = !authScreenEl.classList.contains("hidden");
+  const appVisible = !appRootEl.classList.contains("hidden");
+  if (!authVisible && !appVisible) {
+    showFatalError({
+      message:
+        "Aplikacja nie odpowiedziała w oczekiwanym czasie (sprawdź adres URL i klucz w config.js, i połączenie internetowe).",
+    });
+  }
+}, 6000);
+
+// ---------- Setup ----------
+const CFG = window.ZIOLO_CONFIG || {};
+const configOk = !!(CFG.SUPABASE_URL && !CFG.SUPABASE_URL.includes("YOUR-PROJECT"));
 
 let supabase = null;
 
@@ -218,6 +245,7 @@ function cardTemplate(s, rating, i) {
         <div class="tag-row">
           ${s.genetics ? `<span class="tag genetics">${escapeHtml(s.genetics)}</span>` : ""}
           ${s.availability ? `<span class="tag">${escapeHtml(s.availability)}</span>` : ""}
+          ${rating?.rating_allergic > 1 ? `<span class="tag allergy">⚠ Reakcja alergiczna</span>` : ""}
         </div>
       </div>
       <div class="card-footer">
@@ -276,11 +304,11 @@ function infoRow(label, value) {
 }
 
 function detailTemplate(s, draft) {
-  const stars = (field, label) => `
+  const stars = (field, label, max = 5, extraClass = "") => `
     <div class="field-row">
       <label>${label}</label>
-      <div class="stars" data-field="${field}">
-        ${[1, 2, 3, 4, 5]
+      <div class="stars ${extraClass}" data-field="${field}" data-max="${max}">
+        ${Array.from({ length: max }, (_, i) => i + 1)
           .map(
             (n) =>
               `<button type="button" data-value="${n}" class="${draft[field] >= n ? "filled" : ""}">★</button>`
@@ -349,6 +377,7 @@ function detailTemplate(s, draft) {
     ${stars("rating_look", "Wygląd")}
     ${stars("rating_power", "Moc")}
     ${stars("rating_experience", "Doznania")}
+    ${stars("rating_allergic", "Reakcja alergiczna (1 = brak, 3 = silna)", 3, "alert")}
 
     <div class="field-row">
       <label>Notatki</label>

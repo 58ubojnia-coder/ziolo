@@ -239,6 +239,7 @@ button{
   padding:.1rem .5rem;
 }
 .tag.genetics{ color:var(--amber-bright); border-color:var(--amber); }
+.tag.allergy{ color:var(--red-tag); border-color:var(--red-tag); }
 
 .card-footer{
   display:flex;
@@ -398,6 +399,10 @@ button{
 .stars button.filled{
   color:var(--amber-bright);
   border-color:var(--amber);
+}
+.stars.alert button.filled{
+  color:var(--red-tag);
+  border-color:var(--red-tag);
 }
 
 .tier-row{
