@@ -108,13 +108,18 @@ window.ZIOLO_CONFIG = {
 
 ## Troubleshooting
 
-**Stuck on "Ładowanie katalogu…" forever:** open the browser console
-(Safari: Settings → Advanced → Web Inspector, then connect to a Mac; or just
-test in desktop Chrome first with F12) and look for a red error. The app now
-surfaces real error messages in the UI too instead of hanging silently — if
-you see a banner about Supabase not loading or a config error, it'll tell you
-exactly what's wrong (usually: `config.js` still has the placeholder values,
-or `schema.sql` wasn't run yet).
+**Blank/black screen with nothing showing:** this should no longer happen
+silently — the app now catches any JS error (and a 6-second timeout if
+Supabase never responds) and shows a message in an amber banner at the top of
+the page explaining what went wrong. If you still see nothing at all:
+1. Hard-refresh (Cmd+Shift+R / pull-to-refresh on iOS Safari) — GitHub Pages
+   and browsers cache aggressively, so an old broken version can stick around.
+2. Confirm you re-ran the **latest** `supabase/schema.sql` (it's safe to
+   re-run — it won't touch existing accounts/ratings) and re-uploaded the
+   latest `app.js`/`index.html`/`styles.css` to your GitHub repo.
+3. Open the browser console (F12 on desktop, or connect an iPhone to a Mac via
+   Safari's Develop menu) and read the actual error — it'll now also show a
+   readable version of it on-screen.
 
 **Scraper only finds a handful of strains:** the archive at `/odmiany/` is
 paginated (~13 pages). The scraper now walks pages until it hits one with no
@@ -126,6 +131,12 @@ scraper intentionally uses the archive instead.
 
 ## Notes & honest caveats
 
+- **Allergic reaction rating.** Each strain now has a 1–3 "reakcja
+  alergiczna" rating (1 = none, 3 = strong) alongside taste/smell/look/power/
+  experience. Rating it above 1 shows a small red warning tag on that strain's
+  catalog card so it's visible at a glance without opening the detail panel.
+  If you deployed the app before this was added, just re-run the (updated)
+  `supabase/schema.sql` — it adds the column without touching existing data.
 - **Shared catalog, private ratings.** Everyone who signs up sees the same
   scraped strain list, but tested/tier/price/vendor/ratings/notes are visible
   only to the person who entered them (enforced server-side via Postgres
