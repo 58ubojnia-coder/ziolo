@@ -33,7 +33,7 @@ setTimeout(() => {
 const CFG = window.ZIOLO_CONFIG || {};
 const configOk = !!(CFG.SUPABASE_URL && !CFG.SUPABASE_URL.includes("YOUR-PROJECT"));
 
-let supabase = null;
+let db = null;
 
 function fatalConfigError(msg) {
   configWarningEl.textContent = "⚠ " + msg;
@@ -51,7 +51,7 @@ if (!configOk) {
   );
 } else {
   try {
-    supabase = window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY);
+    db = window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY);
   } catch (e) {
     console.error("Supabase init failed:", e);
     fatalConfigError("Nie udało się połączyć z Supabase: " + e.message);
@@ -61,11 +61,11 @@ if (!configOk) {
 // ---------- Auth state ----------
 let currentUser = null; // { id, email }
 
-if (supabase) {
-  supabase.auth.onAuthStateChange((_event, session) => {
+if (db) {
+  db.auth.onAuthStateChange((_event, session) => {
     handleAuthChange(session);
   });
-  supabase.auth.getSession().then(({ data }) => handleAuthChange(data.session));
+  db.auth.getSession().then(({ data }) => handleAuthChange(data.session));
 }
 
 function handleAuthChange(session) {
@@ -97,21 +97,21 @@ function showAuthMessage(kind, msg) {
 }
 
 document.getElementById("loginBtn")?.addEventListener("click", async () => {
-  if (!supabase) return;
+  if (!db) return;
   const email = document.getElementById("authEmail").value.trim();
   const password = document.getElementById("authPassword").value;
   if (!email || !password) { showAuthMessage("error", "Podaj email i hasło."); return; }
-  const { error } = await supabase.auth.signInWithPassword({ email, password });
+  const { error } = await db.auth.signInWithPassword({ email, password });
   if (error) showAuthMessage("error", error.message);
 });
 
 document.getElementById("signupBtn")?.addEventListener("click", async () => {
-  if (!supabase) return;
+  if (!db) return;
   const email = document.getElementById("authEmail").value.trim();
   const password = document.getElementById("authPassword").value;
   if (!email || !password) { showAuthMessage("error", "Podaj email i hasło."); return; }
   if (password.length < 6) { showAuthMessage("error", "Hasło musi mieć min. 6 znaków."); return; }
-  const { data, error } = await supabase.auth.signUp({ email, password });
+  const { data, error } = await db.auth.signUp({ email, password });
   if (error) { showAuthMessage("error", error.message); return; }
   if (data.session) {
     // email confirmation disabled in Supabase settings -> signed in immediately
@@ -121,8 +121,8 @@ document.getElementById("signupBtn")?.addEventListener("click", async () => {
 });
 
 document.getElementById("logoutBtn")?.addEventListener("click", async () => {
-  if (!supabase) return;
-  await supabase.auth.signOut();
+  if (!db) return;
+  await db.auth.signOut();
 });
 
 // ---------- App state ----------
@@ -143,8 +143,8 @@ async function loadData() {
 
   try {
     const [strainRes, ratingRes] = await Promise.all([
-      supabase.from("strains").select("*").order("name", { ascending: true }),
-      supabase.from("ratings").select("*"),
+      db.from("strains").select("*").order("name", { ascending: true }),
+      db.from("ratings").select("*"),
     ]);
 
     if (strainRes.error) throw strainRes.error;
@@ -453,7 +453,7 @@ async function upsertRating(strainId, patch) {
   delete payload.created_at;
   delete payload.updated_at;
 
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from("ratings")
     .upsert(payload, { onConflict: "strain_id,user_id" })
     .select()
@@ -520,7 +520,7 @@ function openAddStrainForm() {
       cbd_percent: numOrNull(document.getElementById("newCbd").value),
       added_by: currentUser?.id ?? null,
     };
-    const { data, error } = await supabase.from("strains").insert(row).select().single();
+    const { data, error } = await db.from("strains").insert(row).select().single();
     if (error) { showToast("Błąd: " + error.message); return; }
     strains.push(data);
     showToast("Dodano ✓");
